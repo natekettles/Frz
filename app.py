@@ -1,46 +1,51 @@
 # app.py
 import streamlit as st
+import fastf1
 import pandas as pd
-import requests
 
-def fetch_norris_data(start_year, end_year):
+def fetch_data():
+    # Enable cache
+    fastf1.Cache.enable_cache('cache')
+
+    # Initialize an empty list to store the data
     data = []
-    for year in range(start_year, end_year + 1):
-        url = f"http://ergast.com/api/f1/{year}/drivers/norris/results.json"
-        response = requests.get(url)
-        if response.status_code == 200:
-            races = response.json()['MRData']['RaceTable']['Races']
-            for race in races:
-                race_name = race['raceName']
-                round_number = race['round']
-                if 'Results' in race and len(race['Results']) > 0:
-                    result = race['Results'][0]
-                    grid = result['grid']
-                    position = result['position']
-                    data.append([year, round_number, race_name, grid, position])
-    
-    return pd.DataFrame(data, columns=['Year', 'Round', 'Race', 'Grid Position', 'Final Position'])
 
-st.title('Lando Norris Race Data')
+    # Loop through years from 2020 to the current year
+    for year in range(2020, 2025):  # Assuming the current year is 2024
+        # Load the schedule for the year
+        schedule = fastf1.get_event_schedule(year)
+        
+        # Loop through each event in the schedule
+        for event in schedule.index:
+            try:
+                # Load the race session
+                race = fastf1.get_session(year, event, 'R')
+                race.load()
+                
+                # Get Lando Norris's data
+                driver_data = race.results.loc[race.results['Abbreviation'] == 'NOR']
+                
+                if not driver_data.empty:
+                    starting_position = driver_data['GridPosition'].values[0]
+                    
+                    # Get position after lap 1
+                    laps = race.laps.pick_driver('NOR')
+                    if not laps.empty:
+                        position_lap_1 = laps.loc[laps['LapNumber'] == 1, 'Position'].values[0]
+                    else:
+                        position_lap_1 = "N/A"
+                    
+                    # Append the data to our list
+                    data.append([year, race.event['EventName'], starting_position, position_lap_1])
+            except Exception as e:
+                st.error(f"Error processing {year} {event}: {str(e)}")
 
-start_year = st.number_input('Start Year', min_value=2019, max_value=2023, value=2020)
-end_year = st.number_input('End Year', min_value=2019, max_value=2023, value=2023)
+    # Create a DataFrame from the collected data
+    return pd.DataFrame(data, columns=['Year', 'Race', 'Starting Position', 'Position After Lap 1'])
+
+st.title('Lando Norris Race Data (2020-2024)')
 
 if st.button('Fetch Data'):
     with st.spinner('Fetching data...'):
-        df = fetch_norris_data(start_year, end_year)
-    
-    if not df.empty:
-        st.dataframe(df)
-        
-        # Calculate some statistics
-        total_races = len(df)
-        avg_grid = df['Grid Position'].astype(int).mean()
-        avg_finish = df['Final Position'].astype(int).mean()
-        
-        st.subheader('Statistics')
-        st.write(f"Total Races: {total_races}")
-        st.write(f"Average Grid Position: {avg_grid:.2f}")
-        st.write(f"Average Finish Position: {avg_finish:.2f}")
-    else:
-        st.write("No data found for the selected years.")
+        df = fetch_data()
+    st.dataframe(df)
