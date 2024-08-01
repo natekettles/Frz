@@ -1,4 +1,4 @@
 # requirements.txt
 streamlit
+fastf1
 pandas
-requests
